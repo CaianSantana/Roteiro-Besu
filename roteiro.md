@@ -3,7 +3,7 @@
 ### 1.1 Aplicativos de Suporte
 
 ```bash
-sudo apt install -y zip unzip
+sudo apt install -y zip unzip jq
 ```
 
 ### 1.2. Instalação do Docker
@@ -307,98 +307,106 @@ Salve o arquivo.
 ```bash
 python3 -m json.tool "$CONFIGDIR/besu/genesis.json"
 ```
-## 4.4  Criar o arquivo static-nodes.json de cada nó
-Cada nó terá seu próprio arquivo com os outros cinco nós da rede. Não inclua o próprio nó na lista e nem o 0x.
+## 4.4 Criar o arquivo static-nodes.json de cada nó
 
-Crie o arquivo base:
+O Besu exige que o formato da URL enode contenha obrigatoriamente um endereço IP numérico (`enode://<node_id>@<ip>:<port>`), rejeitando nomes de domínio/hostnames de contêineres (`EnodeURLImpl: Invalid ip address`). Por isso, definimos uma sub-rede estática (`172.20.0.0/16`) na rede Docker, mapeando o IP de cada nó no formato `172.20.0.<org><node>`.
 
+### Passo 1: Gerar o arquivo base-static-nodes.json lendo as chaves públicas
+
+Inicialize o array JSON e popule iterativamente com as chaves reais de cada nó (`key.pub`) e seus respectivos IPs estáticos:
 
 ```bash
-nano "$NODESDIR/base-static-nodes.json"
-```
+echo "[]" > "$NODESDIR/base-static-nodes.json"
 
-Insira os enode URLs reais dos outros cinco nós:
-
-
-```json
-[
-  "enode://CHAVE_ORG1_NODE2@org1-node1:30303",
-  "enode://CHAVE_ORG1_NODE2@org1-node2:30303",
-  "enode://CHAVE_ORG2_NODE1@org2-node1:30303",
-  "enode://CHAVE_ORG2_NODE2@org2-node2:30303",
-  "enode://CHAVE_ORG3_NODE1@org3-node1:30303",
-  "enode://CHAVE_ORG3_NODE2@org3-node2:30303"
-]
-```
-
-Em cada arquivo, mantem os outros cinco nós e remova a entrada correspondente ao próprio nó.:
-
-
-``` bash
 for i in {1..3}; do
   for j in {1..2}; do
-    grep -v "org${i}-node${j}" "$NODESDIR/base-static-nodes.json" \
-      | sed '$ s/,$//' \
-      > "$NODESDIR/org${i}-node${j}/static-nodes.json"
+    NODE="org${i}-node${j}"
+    IP="172.20.0.${i}${j}"
+    PUBKEY=$(cat "$NODESDIR/$NODE/key.pub" | tr -d '\r\n ' | sed 's/^0x//')
+    jq --arg enode "enode://${PUBKEY}@${IP}:30303" '. += [$enode]' \
+      "$NODESDIR/base-static-nodes.json" > tmp.json && mv tmp.json "$NODESDIR/base-static-nodes.json"
   done
 done
 
 ```
 
+### Passo 2: Distribuir o static-nodes.json de cada nó excluindo o seu próprio IP
 
+Cada nó deve conhecer apenas os outros 5 nós da rede:
 
-[!IMPORTANT]
-Os nomes org1-node1, org1-node2 etc. só funcionarão como hosts se os contêineres compartilharem uma rede Docker na qual esses nomes possam ser resolvidos. Se as organizações forem executadas em máquinas distintas, utilize endereços IP ou DNS alcançáveis e as portas P2P correspondentes.
+```bash
+for i in {1..3}; do
+  for j in {1..2}; do
+    NODE="org${i}-node${j}"
+    IP="172.20.0.${i}${j}"
+    jq --arg ip "$IP" '[.[] | select(contains($ip) | not)]' \
+      "$NODESDIR/base-static-nodes.json" > "$NODESDIR/$NODE/static-nodes.json"
+  done
+done
+
+```
+
+---
 
 ## 4.5 Validar os arquivos de configuração
 
-Valide os arquivos JSON de cada nó:
+Confira se cada pasta gerou um array JSON válido contendo exatamente 5 nós:
 
-
-``` bash
-for i in {1..3}; do
-  for j in {1..2}; do
-    python3 -m json.tool "$NODESDIR/org$i-node$j/static-nodes.json"
-  done
+```bash
+for d in "$NODESDIR"/org*-node*; do
+  echo -n "$(basename "$d"): "
+  jq '. | length' "$d/static-nodes.json"
 done
+
 ```
 
-Esses comandos verificam a sintaxe JSON, mas não confirmam que as chaves, os hosts e as portas dos enode URLs estejam corretos.
+Para validar a sintaxe e inspecionar a formatação:
+
+```bash
+python3 -m json.tool "$NODESDIR/org1-node1/static-nodes.json"
+
+```
+
+---
 
 ## 5. Gerar os arquivos Docker Compose dos nodes
-Nesta etapa, será criado um arquivo Docker Compose para a Org1, contendo os serviços org1-node1 e org1-node2.
 
-## 5.1 Criar os diretórios de dados
-Cada nó precisa de um diretório exclusivo para armazenar os dados da blockchain:
+### 5.1 Criar os diretórios de dados
 
-
-```bash
-mkdir -p "$BASEDIR/volumes/org1-node1"
-mkdir -p "$BASEDIR/volumes/org1-node2"
-```
-
-## 5.2 Criar a rede Docker compartilhada
-Crie uma rede para permitir a comunicação entre os nós das três organizações:
-
+Crie os diretórios de persistência isolados para todas as organizações:
 
 ```bash
-docker network create rede-besu-net
+for i in {1..3}; do
+  for j in {1..2}; do
+    mkdir -p "$BASEDIR/volumes/org${i}-node${j}"
+  done
+done
+
 ```
 
-Se a rede já existir, não é necessário criá-la novamente.
+### 5.2 Criar a rede Docker compartilhada com subnet estático
 
-## 5.3 Criar o arquivo Docker Compose da Org1
+Crie a rede bridge definindo o bloco CIDR compatível com a tabela de enodes:
+
+```bash
+docker network create --subnet=172.20.0.0/16 rede-besu-net
+
+```
+
+---
+
+### 5.3 Criar o arquivo Docker Compose da Org1
+
 Crie o arquivo:
 
 ```bash
 nano "$BASEDIR/docker-compose-org1.yml"
+
 ```
 
-Insira a configuração:
-
+Insira a configuração com os IPs fixos e parâmetros P2P ajustados:
 
 ```yaml
-
 services:
   org1-node1:
     image: hyperledger/besu:24.5.4
@@ -413,7 +421,7 @@ services:
       - --genesis-file=/config/genesis.json
       - --node-private-key-file=/var/lib/besu/key
       - --static-nodes-file=/config/static-nodes.json
-      - --p2p-host=0.0.0.0
+      - --p2p-host=172.20.0.11
       - --p2p-port=30303
       - --rpc-http-enabled=true
       - --rpc-http-host=0.0.0.0
@@ -439,7 +447,8 @@ services:
       - "127.0.0.1:9545:9545"
 
     networks:
-      - besu-net
+      besu-net:
+        ipv4_address: 172.20.0.11
 
   org1-node2:
     image: hyperledger/besu:24.5.4
@@ -454,7 +463,7 @@ services:
       - --genesis-file=/config/genesis.json
       - --node-private-key-file=/var/lib/besu/key
       - --static-nodes-file=/config/static-nodes.json
-      - --p2p-host=0.0.0.0
+      - --p2p-host=172.20.0.12
       - --p2p-port=30303
       - --rpc-http-enabled=true
       - --rpc-http-host=0.0.0.0
@@ -480,67 +489,124 @@ services:
       - "127.0.0.1:9546:9545"
 
     networks:
-      - besu-net
+      besu-net:
+        ipv4_address: 172.20.0.12
 
 networks:
   besu-net:
     external: true
     name: rede-besu-net
+
 ```
 
+---
 
+### 5.4 Gerar automaticamente os arquivos da Org2 e Org3
 
-## 5.4 Validar a configuração
+Execute os comandos a seguir para replicar o compose e aplicar as substituições de nomes, portas expostas no host e endereços IP de cada nó:
+
+#### Configurar Org2:
 
 ```bash
-cd "$BASEDIR"
-docker compose -f docker-compose-org1.yml config
-```
-Confira os arquivos utilizados pelos dois nós:
+cp "$BASEDIR/docker-compose-org1.yml" "$BASEDIR/docker-compose-org2.yml"
 
+# Substitui referências de nomes e caminhos
+sed -i 's/org1/org2/g' "$BASEDIR/docker-compose-org2.yml"
+
+# Atualiza portas expostas no host (P2P: 30303/30304 | RPC: 8547/8548 | Métricas: 9547/9548)
+sed -i 's/30301:30303/30303:30303/g' "$BASEDIR/docker-compose-org2.yml"
+sed -i 's/30302:30303/30304:30303/g' "$BASEDIR/docker-compose-org2.yml"
+sed -i 's/8545:8545/8547:8545/g'     "$BASEDIR/docker-compose-org2.yml"
+sed -i 's/8546:8545/8548:8545/g'     "$BASEDIR/docker-compose-org2.yml"
+sed -i 's/9545:9545/9547:9545/g'     "$BASEDIR/docker-compose-org2.yml"
+sed -i 's/9546:9545/9548:9545/g'     "$BASEDIR/docker-compose-org2.yml"
+
+# Atualiza IPs estáticos para Org 2
+sed -i 's/172\.20\.0\.11/172.20.0.21/g' "$BASEDIR/docker-compose-org2.yml"
+sed -i 's/172\.20\.0\.12/172.20.0.22/g' "$BASEDIR/docker-compose-org2.yml"
+
+```
+
+#### Configurar Org3:
 
 ```bash
-ls -l config/besu/genesis.json
-ls -l config/nodes/org1-node1/key
-ls -l config/nodes/org1-node1/static-nodes.json
-ls -l config/nodes/org1-node2/key
-ls -l config/nodes/org1-node2/static-nodes.json
+cp "$BASEDIR/docker-compose-org1.yml" "$BASEDIR/docker-compose-org3.yml"
+
+# Substitui referências de nomes e caminhos
+sed -i 's/org1/org3/g' "$BASEDIR/docker-compose-org3.yml"
+
+# Atualiza portas expostas no host (P2P: 30305/30306 | RPC: 8549/8550 | Métricas: 9549/9550)
+sed -i 's/30301:30303/30305:30303/g' "$BASEDIR/docker-compose-org3.yml"
+sed -i 's/30302:30303/30306:30303/g' "$BASEDIR/docker-compose-org3.yml"
+sed -i 's/8545:8545/8549:8545/g'     "$BASEDIR/docker-compose-org3.yml"
+sed -i 's/8546:8545/8550:8545/g'     "$BASEDIR/docker-compose-org3.yml"
+sed -i 's/9545:9545/9549:9545/g'     "$BASEDIR/docker-compose-org3.yml"
+sed -i 's/9546:9545/9550:9545/g'     "$BASEDIR/docker-compose-org3.yml"
+
+# Atualiza IPs estáticos para Org 3
+sed -i 's/172\.20\.0\.11/172.20.0.31/g' "$BASEDIR/docker-compose-org3.yml"
+sed -i 's/172\.20\.0\.12/172.20.0.32/g' "$BASEDIR/docker-compose-org3.yml"
+
 ```
-## 5.5 Iniciar os nós da Org1
+
+---
+
+## 5.5 Validar as configurações
+
+Valide a estrutura de cada compose:
 
 ```bash
-docker compose -f docker-compose-org1.yml up -d
-```
-Verifique o estado dos serviços:
+docker compose -f "$BASEDIR/docker-compose-org1.yml" config > /dev/null && echo "Org1 OK"
+docker compose -f "$BASEDIR/docker-compose-org2.yml" config > /dev/null && echo "Org2 OK"
+docker compose -f "$BASEDIR/docker-compose-org3.yml" config > /dev/null && echo "Org3 OK"
 
+```
+
+Confira o alinhamento de portas e IPs atribuídos:
 
 ```bash
-docker compose -f docker-compose-org1.yml ps
+grep -E 'p2p-host|ipv4_address' "$BASEDIR"/docker-compose-org*.yml
+
 ```
-Acompanhe os logs:
+
+---
+
+## 5.6 Iniciar todos os nós da rede
+
+Suba as três organizações:
 
 ```bash
-docker compose -f docker-compose-org1.yml logs -f
-```
-Para consultar apenas o primeiro nó:
+docker compose -p org1 -f "$BASEDIR/docker-compose-org1.yml" up -d
+docker compose -p org2 -f "$BASEDIR/docker-compose-org2.yml" up -d
+docker compose -p org3 -f "$BASEDIR/docker-compose-org3.yml" up -d
 
+```
+
+Verifique o status de todos os contêineres:
 
 ```bash
-docker logs -f org1-node1
-```
-Para interromper os serviços:
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-```bash
-docker compose -f docker-compose-org1.yml down
 ```
-## 5.6 Validar a conectividade
-Após iniciar as organizações, consulte os peers conectados ao primeiro nó da Org1:
 
+---
+
+## 5.7 Validar a conectividade e consenso
+
+Consulte os peers conectados ao primeiro nó (a resposta `"0x5"` indica 5 peers conectados):
 
 ```bash
 curl -s http://127.0.0.1:8545 \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' | jq .
+
 ```
 
-O resultado apresentará a quantidade de peers conectados em hexadecimal. Em uma rede com seis nós totalmente conectados, cada nó poderá ter cinco peers.
+Confirme a produção de blocos via QBFT:
+
+```bash
+curl -s http://127.0.0.1:8545 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+
+```
