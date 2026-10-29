@@ -35,26 +35,11 @@ Para confirma a correta instalação e versão do Docker
 
 ```bash
 docker --version
-sudo docker run hello-world
+docker run hello-world
+docker compose --version
 ```
 
-### 1.3. Docker Compose
-
-```bash
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-linux-x86_64" -o docker-compose
-sudo cp docker-compose /usr/bin/docker-compose
-sudo chmod +x /usr/bin/docker-compose
-```
-Para confirmar a correta instalação e versão do Docker Compose
-
-> [!IMPORTANT]
-> <span style="color:purple;"><strong>EXECUTE A VALIDAÇÃO ABAIXO</strong></span>:
-
-```bash
-docker-compose --version
-```
-
-### 1.4. Java 17
+### 1.3. Java 17
 
 ```bash
 apt-cache search openjdk | grep openjdk-17
