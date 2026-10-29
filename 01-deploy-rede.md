@@ -244,8 +244,8 @@ cat > "$CONFIGDIR/besu/validators.json" <<EOF
 EOF
 ```
 
-Confira o resultado:
-
+> [!IMPORTANT]
+> <span style="color:purple;"><strong>EXECUTE A VALIDAÇÃO ABAIXO</strong></span>:
 
 ```bash
 cat "$CONFIGDIR/besu/validators.json"
@@ -280,36 +280,60 @@ Insira a configuração abaixo, substituindo 0xCOLE_AQUI_O_EXTRADATA_GERADO pelo
 
 ```json
 {
-  "config": {
-    "chainId": 1337,
-    "berlinBlock": 0,
-    "qbft": {
-      "blockperiodseconds": 2,
-      "epochlength": 30000,
-      "requesttimeoutseconds": 4
+  "genesis": {
+    "config": {
+      "chainId": 1337,
+      "berlinBlock": 0,
+      "qbft": {
+        "blockperiodseconds": 2,
+        "epochlength": 30000,
+        "requesttimeoutseconds": 4
+      }
+    },
+    "nonce": "0x0",
+    "timestamp": "0x58ee40ba",
+    "gasLimit": "0x47b760",
+    "difficulty": "0x1",
+    "mixHash": "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365",
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "extraData": "0xCOLE_AQUI_O_EXTRADATA_GERADO",
+    "alloc": {
+      "fe3b557e8fb62b89f4916b721be55ceb828dbd73": {
+        "privateKey": "8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63",
+        "comment": "private key and this comment are ignored.  In a real chain, the private key should NOT be stored",
+        "balance": "0xad78ebc5ac6200000"
+      },
+      "627306090abaB3A6e1400e9345bC60c78a8BEf57": {
+        "privateKey": "c87509a1c067bbde78beb793e6fa76530b6382a4c0241e5e4a9ec0a0f44dc0d3",
+        "comment": "private key and this comment are ignored.  In a real chain, the private key should NOT be stored",
+        "balance": "90000000000000000000000"
+      },
+      "f17f52151EbEF6C7334FAD080c5704D77216b732": {
+        "privateKey": "ae6ae8e5ccbfb04590405997ee2d52d2b330726137b875053c36d94e974d162f",
+        "comment": "private key and this comment are ignored.  In a real chain, the private key should NOT be stored",
+        "balance": "90000000000000000000000"
+      }
     }
   },
-  "nonce": "0x0",
-  "timestamp": "0x0",
-  "gasLimit": "0x1c9c380",
-  "difficulty": "0x1",
-  "mixHash": "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365",
-  "coinbase": "0x0000000000000000000000000000000000000000",
-  "extraData": "0xCOLE_AQUI_O_EXTRADATA_GERADO",
-  "alloc": {}
+  "blockchain": {
+    "nodes": {
+      "generate": true,
+      "count": 4
+    }
+  }
 }
 ```
 
 Salve o arquivo.
 
-
+> [!IMPORTANT]
+> <span style="color:purple;"><strong>EXECUTE A VALIDAÇÃO ABAIXO</strong></span>:
 
 ```bash
 python3 -m json.tool "$CONFIGDIR/besu/genesis.json"
 ```
 ## 4.4 Criar o arquivo static-nodes.json de cada nó
 
-O Besu exige que o formato da URL enode contenha obrigatoriamente um endereço IP numérico (`enode://<node_id>@<ip>:<port>`), rejeitando nomes de domínio/hostnames de contêineres (`EnodeURLImpl: Invalid ip address`). Por isso, definimos uma sub-rede estática (`172.20.0.0/16`) na rede Docker, mapeando o IP de cada nó no formato `172.20.0.<org><node>`.
 
 ### Passo 1: Gerar o arquivo base-static-nodes.json lendo as chaves públicas
 
@@ -360,7 +384,8 @@ done
 
 ```
 
-Para validar a sintaxe e inspecionar a formatação:
+> [!IMPORTANT]
+> <span style="color:purple;"><strong>EXECUTE A VALIDAÇÃO ABAIXO</strong></span>:
 
 ```bash
 python3 -m json.tool "$NODESDIR/org1-node1/static-nodes.json"
@@ -553,7 +578,8 @@ sed -i 's/172\.20\.0\.12/172.20.0.32/g' "$BASEDIR/docker-compose-org3.yml"
 
 ## 5.5 Validar as configurações
 
-Valide a estrutura de cada compose:
+> [!IMPORTANT]
+> <span style="color:purple;"><strong>EXECUTE A VALIDAÇÃO ABAIXO</strong></span>:
 
 ```bash
 docker compose -f "$BASEDIR/docker-compose-org1.yml" config > /dev/null && echo "Org1 OK"
@@ -608,5 +634,13 @@ Confirme a produção de blocos via QBFT:
 curl -s http://127.0.0.1:8545 \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-
 ```
+Modifique o tipo de nível de log:
+```bash
+curl -s http://127.0.0.1:8545 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"admin_changeLogLevel","params":["DEBUG"],"id":1}'
+```
+
+Para mais comandos, consulte a [documentação](https://docs.besu-eth.org/public-networks/reference/api).
+
