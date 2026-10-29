@@ -301,7 +301,7 @@ Insira a configuração abaixo, substituindo 0xCOLE_AQUI_O_EXTRADATA_GERADO pelo
         "balance": "90000000000000000000000"
       }
     }
-  },
+  }
 }
 ```
 
