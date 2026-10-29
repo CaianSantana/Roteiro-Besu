@@ -300,12 +300,6 @@ Insira a configuração abaixo, substituindo 0xCOLE_AQUI_O_EXTRADATA_GERADO pelo
       }
     }
   },
-  "blockchain": {
-    "nodes": {
-      "generate": true,
-      "count": 4
-    }
-  }
 }
 ```
 
