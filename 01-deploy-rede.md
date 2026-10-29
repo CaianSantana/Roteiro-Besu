@@ -1,3 +1,5 @@
+![Topologia](images/topologia.png)
+
 # 1. Instalar Requisitos
 
 ### 1.1 Aplicativos de Suporte
